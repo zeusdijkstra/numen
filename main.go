@@ -36,39 +36,38 @@ func main() {
 
 func run(root string, out io.Writer, cfg config) error {
 	fileSystem := os.DirFS(root)
-	return fs.WalkDir(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
+	return fs.WalkDir(fileSystem, ".",
+		// our callback function
+		func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
 
-		// Early exit for directories using DirEntry (faster)
-		if d.IsDir() {
-			return nil
-		}
+			if d.IsDir() {
+				return nil
+			}
 
-		// Only get FileInfo if we need size information
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
 
-		if filterOut(path, cfg.ext, cfg.size, info) {
-			return nil
-		}
+			if !shouldKeep(path, cfg.ext, cfg.size, info) {
+				return nil
+			}
 
-		return listFile(path, out)
-	})
+			return listFile(path, out)
+		})
 }
 
-func filterOut(path, ext string, minSize int64, info fs.FileInfo) bool {
-	// We already checked IsDir() above, so just check size and extension
+func shouldKeep(path, ext string, minSize int64, info fs.FileInfo) bool {
 	if info.Size() < minSize {
-		return true
+		return false
 	}
 	if ext != "" && filepath.Ext(path) != ext {
-		return true
+		return false
 	}
-	return false
+	return true
 }
 
 func listFile(path string, out io.Writer) error {
