@@ -7,11 +7,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 )
 
 type config struct {
 	list bool
-	ext  string
+	ext  []string
 	size int64
 }
 
@@ -24,7 +26,7 @@ func main() {
 
 	c := config{
 		list: *list,
-		ext:  *ext,
+		ext:  multipleExtensions(*ext),
 		size: *size,
 	}
 
@@ -43,10 +45,6 @@ func run(root string, out io.Writer, cfg config) error {
 				return err
 			}
 
-			if d.IsDir() {
-				return nil
-			}
-
 			info, err := d.Info()
 			if err != nil {
 				return err
@@ -60,17 +58,29 @@ func run(root string, out io.Writer, cfg config) error {
 		})
 }
 
-func shouldKeep(path, ext string, minSize int64, info fs.FileInfo) bool {
+func shouldKeep(path string, exts []string, minSize int64, info fs.FileInfo) bool {
+	if info.IsDir() {
+		return false
+	}
+
 	if info.Size() < minSize {
 		return false
 	}
-	if ext != "" && filepath.Ext(path) != ext {
-		return false
+	// if no extensions specified, accept all files
+	if len(exts) == 0 || (len(exts) == 1 && exts[0] == "") {
+		return true
 	}
-	return true
+
+	fileExt := filepath.Ext(path)
+	return slices.Contains(exts, fileExt)
 }
 
 func listFile(path string, out io.Writer) error {
 	_, err := fmt.Fprintln(out, path)
 	return err
+}
+
+func multipleExtensions(input string) []string {
+	exts := strings.Split(input, " ")
+	return exts
 }
