@@ -31,7 +31,7 @@ func main() {
 	}
 
 	if err := run(*root, os.Stdout, c); err != nil {
-		fmt.Println("error! from run()")
+		fmt.Println("there is an error running the code")
 		os.Exit(1)
 	}
 }
@@ -58,6 +58,7 @@ func run(root string, out io.Writer, cfg config) error {
 		})
 }
 
+// ACTIONS
 func shouldKeep(path string, exts []string, minSize int64, info fs.FileInfo) bool {
 	if info.IsDir() {
 		return false
@@ -66,7 +67,8 @@ func shouldKeep(path string, exts []string, minSize int64, info fs.FileInfo) boo
 	if info.Size() < minSize {
 		return false
 	}
-	// if no extensions specified, accept all files
+
+	// keep all files if there is no extensions
 	if len(exts) == 0 || (len(exts) == 1 && exts[0] == "") {
 		return true
 	}
@@ -81,6 +83,6 @@ func listFile(path string, out io.Writer) error {
 }
 
 func multipleExtensions(input string) []string {
-	exts := strings.Split(input, " ")
+	exts := strings.Fields(input)
 	return exts
 }
