@@ -15,6 +15,7 @@ type config struct {
 	list bool
 	ext  []string
 	size int64
+	del  []string
 }
 
 func main() {
@@ -22,12 +23,14 @@ func main() {
 	list := flag.Bool("list", false, "list flag")
 	ext := flag.String("ext", "", "extension flag")
 	size := flag.Int64("min", 0, "minimal size of the file")
+	del := flag.String("del", "", "delete file")
 	flag.Parse()
 
 	c := config{
 		list: *list,
-		ext:  multipleExtensions(*ext),
+		ext:  handleMultiple(*ext),
 		size: *size,
+		del:  handleMultiple(*del),
 	}
 
 	if err := run(*root, os.Stdout, c); err != nil {
@@ -54,7 +57,26 @@ func run(root string, out io.Writer, cfg config) error {
 				return nil
 			}
 
-			return listFile(path, out)
+			if cfg.del != nil {
+				listFile := []string{}
+				for _, file := range cfg.del {
+					full := filepath.Join(root, file)
+					listFile = append(listFile, full)
+				}
+				err := deleteFile(listFile)
+				if err != nil {
+					return err
+				}
+				fmt.Println(msg)
+				return nil
+			}
+
+			// list only if we are not deleting file
+			if cfg.del == nil {
+				return listFile(path, out)
+			}
+
+			return nil
 		})
 }
 
@@ -82,7 +104,18 @@ func listFile(path string, out io.Writer) error {
 	return err
 }
 
-func multipleExtensions(input string) []string {
+func deleteFile(files []string) error {
+	for _, file := range files {
+		err := os.Remove(file)
+		if err != nil {
+			return err
+		}
+		fmt.Sprintf("sucesfully deleted: %s", file)
+	}
+	return nil
+}
+
+func handleMultiple(input string) []string {
 	exts := strings.Fields(input)
 	return exts
 }

@@ -10,26 +10,6 @@ import (
 	"time"
 )
 
-func createTestFS() *fstest.MapFS {
-	return &fstest.MapFS{
-		"file.txt": {
-			Data: []byte("content"),
-		},
-		"file.go": {
-			Data: []byte("package main"),
-		},
-		"subdir/script.py": {
-			Data: []byte("print('hello')"),
-		},
-		"subdir/nested/config.yml": {
-			Data: []byte("key: value"),
-		},
-		"directory": {
-			Mode: fs.ModeDir,
-		},
-	}
-}
-
 func TestShouldKeep(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -240,7 +220,7 @@ func TestMultipleExtensions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := multipleExtensions(tt.input)
+			got := handleMultiple(tt.input)
 
 			if len(got) != len(tt.expected) {
 				t.Fatalf("len=%d, want=%d (got=%v, expected=%v)",
@@ -280,6 +260,26 @@ func (m mockFileInfo) Sys() interface{}   { return nil }
 
 func normalizeLines(s string) string {
 	return strings.ReplaceAll(s, "\r\n", "\n")
+}
+
+func createTestFS() *fstest.MapFS {
+	return &fstest.MapFS{
+		"file.txt": {
+			Data: []byte("content"),
+		},
+		"file.go": {
+			Data: []byte("package main"),
+		},
+		"subdir/script.py": {
+			Data: []byte("print('hello')"),
+		},
+		"subdir/nested/config.yml": {
+			Data: []byte("key: value"),
+		},
+		"directory": {
+			Mode: fs.ModeDir,
+		},
+	}
 }
 
 // make os.DirFS injectable for testing
