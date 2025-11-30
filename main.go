@@ -41,8 +41,9 @@ func main() {
 
 func run(root string, out io.Writer, cfg config) error {
 	fileSystem := os.DirFS(root)
+	// fs walkdir
 	return fs.WalkDir(fileSystem, ".",
-		// our callback function
+		// callback function
 		func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -63,7 +64,7 @@ func run(root string, out io.Writer, cfg config) error {
 					full := filepath.Join(root, file)
 					listFile = append(listFile, full)
 				}
-				err := deleteFile(listFile)
+				msg, err := deleteFiles(listFile)
 				if err != nil {
 					return err
 				}
@@ -104,15 +105,25 @@ func listFile(path string, out io.Writer) error {
 	return err
 }
 
-func deleteFile(files []string) error {
+func deleteFiles(files []string) (string, error) {
+	var deleted []string
+	var errs []error
+
 	for _, file := range files {
-		err := os.Remove(file)
-		if err != nil {
-			return err
+		if err := os.Remove(file); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", file, err))
+			continue
 		}
-		fmt.Sprintf("sucesfully deleted: %s", file)
+		deleted = append(deleted, file)
 	}
-	return nil
+
+	msg := fmt.Sprintf("successfully deleted: %v", deleted)
+
+	if len(errs) > 0 {
+		return msg, fmt.Errorf("some files failed: %v", errs)
+	}
+
+	return msg, nil
 }
 
 func handleMultiple(input string) []string {

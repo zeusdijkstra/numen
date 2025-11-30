@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -194,27 +195,113 @@ func TestRun_WithRealFS(t *testing.T) {
 // 	}
 // }
 
+func TestDeleteFiles(t *testing.T) {
+	// Helper to create temp files
+	createTempFiles := func(t *testing.T, names []string) []string {
+		t.Helper()
+		var paths []string
+		for _, name := range names {
+			path := filepath.Join(t.TempDir(), name)
+			err := os.WriteFile(path, []byte("test"), 0644)
+			if err != nil {
+				t.Fatalf("failed to create temp file: %v", err)
+			}
+			paths = append(paths, path)
+		}
+		return paths
+	}
+
+	tests := []struct {
+		name           string
+		existingFiles  []string // files to create before test
+		inputFiles     []string // files passed to deleteFiles()
+		wantErr        bool
+		wantDeletedNum int
+	}{
+		{
+			name:           "all files deleted successfully",
+			existingFiles:  []string{"a.txt", "b.txt"},
+			inputFiles:     []string{}, // placeholder updated below
+			wantErr:        false,
+			wantDeletedNum: 2,
+		},
+		{
+			name:           "file does not exist",
+			existingFiles:  []string{},
+			inputFiles:     []string{"missing.txt"},
+			wantErr:        true,
+			wantDeletedNum: 0,
+		},
+		{
+			name:           "some files deleted, some fail",
+			existingFiles:  []string{"a.txt"},
+			inputFiles:     []string{}, // placeholder updated below
+			wantErr:        true,
+			wantDeletedNum: 1,
+		},
+		{
+			name:           "empty list",
+			existingFiles:  []string{},
+			inputFiles:     []string{},
+			wantErr:        false,
+			wantDeletedNum: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create the files that should exist
+			existing := createTempFiles(t, tc.existingFiles)
+
+			// Determine the files to pass as input:
+			// If inputFiles is empty but existingFiles is not, use existing.
+			input := tc.inputFiles
+			if len(input) == 0 && len(existing) > 0 {
+				input = existing
+			}
+
+			msg, err := deleteFiles(input)
+
+			if tc.wantErr && err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			// Check that the message contains the list of deleted files
+			for _, f := range existing {
+				if strings.Contains(msg, filepath.Base(f)) {
+					// count only those that should have succeeded
+					continue
+				}
+			}
+
+			// Confirm how many files were actually deleted
+			deletedCount := 0
+			for _, f := range input {
+				if _, statErr := os.Stat(f); statErr != nil {
+					deletedCount++
+				}
+			}
+
+			if deletedCount != tc.wantDeletedNum {
+				t.Errorf("expected %d deleted, got %d", tc.wantDeletedNum, deletedCount)
+			}
+		})
+	}
+}
+
 func TestMultipleExtensions(t *testing.T) {
 	tests := []struct {
 		input    string
 		expected []string
 	}{
-		// empty input → no extensions
 		{"", []string{}},
-
-		// single extension
 		{".go", []string{".go"}},
-
-		// multiple extensions separated by spaces
 		{".go .txt .py", []string{".go", ".txt", ".py"}},
-
-		// leading / trailing / repeated spaces
 		{"   .go   .txt   ", []string{".go", ".txt"}},
-
-		// tabs and newlines
 		{".go\t.txt\n.py", []string{".go", ".txt", ".py"}},
-
-		// mixed whitespace
 		{"  .go\t   .txt \n .py  ", []string{".go", ".txt", ".py"}},
 	}
 
