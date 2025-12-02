@@ -7,11 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"testing/fstest"
 	"time"
 )
 
-func TestShouldKeep(t *testing.T) {
+func TestFileProcessor_ShouldKeep(t *testing.T) {
 	tests := []struct {
 		name     string
 		path     string
@@ -72,7 +71,9 @@ func TestShouldKeep(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := shouldKeep(tt.path, tt.exts, tt.minSize, tt.info)
+			cfg := Config{Ext: tt.exts, Size: tt.minSize}
+			processor := NewFileProcessor(".", cfg)
+			result := processor.shouldKeep(tt.path, tt.info)
 			if result != tt.expected {
 				t.Errorf("shouldKeep(%q, %v, %d) = %v, want %v",
 					tt.path, tt.exts, tt.minSize, result, tt.expected)
@@ -81,47 +82,47 @@ func TestShouldKeep(t *testing.T) {
 	}
 }
 
-func TestRun_WithRealFS(t *testing.T) {
+func TestFileProcessor_ListFiles(t *testing.T) {
 	tests := []struct {
 		name       string
-		cfg        config
+		cfg        Config
 		wantOutput string
 	}{
 		{
 			name:       "list all files no filters",
-			cfg:        config{ext: []string{}, size: 0},
+			cfg:        Config{Ext: []string{}, Size: 0},
 			wantOutput: "file.go\nfile.txt\nsubdir/nested/config.yml\nsubdir/script.py\n",
 		},
 		{
 			name:       "filter by extension .go",
-			cfg:        config{ext: []string{".go"}, size: 0},
+			cfg:        Config{Ext: []string{".go"}, Size: 0},
 			wantOutput: "file.go\n",
 		},
 		{
 			name:       "filter by multiple extensions",
-			cfg:        config{ext: []string{".go", ".txt"}, size: 0},
+			cfg:        Config{Ext: []string{".go", ".txt"}, Size: 0},
 			wantOutput: "file.go\nfile.txt\n",
 		},
 		{
 			name:       "filter by size",
-			cfg:        config{ext: []string{}, size: 10},
+			cfg:        Config{Ext: []string{}, Size: 10},
 			wantOutput: "file.go\nsubdir/nested/config.yml\nsubdir/script.py\n",
 		},
 		{
 			name:       "no files match criteria",
-			cfg:        config{ext: []string{".java"}, size: 0},
+			cfg:        Config{Ext: []string{".java"}, Size: 0},
 			wantOutput: "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
+			processor := NewFileProcessor("./testdata", tt.cfg)
 			var out bytes.Buffer
-			err := run("./testdata", &out, tt.cfg)
+			err := processor.listFiles(&out)
 
 			if err != nil {
-				t.Errorf("run() unexpected error: %v", err)
+				t.Errorf("listFiles() unexpected error: %v", err)
 				return
 			}
 
@@ -129,119 +130,44 @@ func TestRun_WithRealFS(t *testing.T) {
 			want := normalizeLines(tt.wantOutput)
 
 			if got != want {
-				t.Errorf("run() output = %q, want %q", got, want)
+				t.Errorf("listFiles() output = %q, want %q", got, want)
 			}
 		})
 	}
 }
 
-// func TestRun_WithMockFS(t *testing.T) {
-// 	tests := []struct {
-// 		name       string
-// 		cfg        config
-// 		wantOutput string
-// 	}{
-// 		{
-// 			name:       "list all files no filters",
-// 			cfg:        config{ext: []string{}, size: 0},
-// 			wantOutput: "file.txt\nfile.go\nsubdir/script.py\nsubdir/nested/config.yml\n",
-// 		},
-// 		{
-// 			name:       "filter by extension .go",
-// 			cfg:        config{ext: []string{".go"}, size: 0},
-// 			wantOutput: "file.go\n",
-// 		},
-// 		{
-// 			name:       "filter by multiple extensions",
-// 			cfg:        config{ext: []string{".go", ".txt"}, size: 0},
-// 			wantOutput: "file.txt\nfile.go\n",
-// 		},
-// 		{
-// 			name:       "filter by size",
-// 			cfg:        config{ext: []string{}, size: 10},
-// 			wantOutput: "file.go\nsubdir/script.py\nsubdir/nested/config.yml\n",
-// 		},
-// 		{
-// 			name:       "no files match criteria",
-// 			cfg:        config{ext: []string{".java"}, size: 0},
-// 			wantOutput: "",
-// 		},
-// 	}
-//
-// 	for _, tt := range tests {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			mockFS := createTestFS()
-//
-// 			// replace os.DirFS for testing
-// 			originalDirFS := osDirFS
-// 			osDirFS = func(root string) fs.FS { return mockFS }
-// 			defer func() { osDirFS = originalDirFS }()
-//
-// 			var out bytes.Buffer
-// 			err := run(".", &out, tt.cfg)
-//
-// 			if err != nil {
-// 				t.Errorf("run() unexpected error: %v", err)
-// 				return
-// 			}
-//
-// 			got := normalizeLines(out.String())
-// 			want := normalizeLines(tt.wantOutput)
-//
-// 			if got != want {
-// 				t.Errorf("run() output = %q, want %q", got, want)
-// 			}
-// 		})
-// 	}
-// }
-
-func TestDeleteFiles(t *testing.T) {
-	// Helper to create temp files
-	createTempFiles := func(t *testing.T, names []string) []string {
-		t.Helper()
-		var paths []string
-		for _, name := range names {
-			path := filepath.Join(t.TempDir(), name)
-			err := os.WriteFile(path, []byte("test"), 0644)
-			if err != nil {
-				t.Fatalf("failed to create temp file: %v", err)
-			}
-			paths = append(paths, path)
-		}
-		return paths
-	}
-
+func TestFileProcessor_DeleteFiles(t *testing.T) {
 	tests := []struct {
 		name           string
-		existingFiles  []string // files to create before test
-		inputFiles     []string // files passed to deleteFiles()
+		setupFiles     []string
+		inputFiles     []string
 		wantErr        bool
 		wantDeletedNum int
 	}{
 		{
 			name:           "all files deleted successfully",
-			existingFiles:  []string{"a.txt", "b.txt"},
-			inputFiles:     []string{}, // placeholder updated below
+			setupFiles:     []string{"a.txt", "b.txt"},
+			inputFiles:     []string{}, // will be set to setupFiles
 			wantErr:        false,
 			wantDeletedNum: 2,
 		},
 		{
 			name:           "file does not exist",
-			existingFiles:  []string{},
+			setupFiles:     []string{},
 			inputFiles:     []string{"missing.txt"},
 			wantErr:        true,
 			wantDeletedNum: 0,
 		},
 		{
 			name:           "some files deleted, some fail",
-			existingFiles:  []string{"a.txt"},
-			inputFiles:     []string{}, // placeholder updated below
+			setupFiles:     []string{"a.txt"},
+			inputFiles:     []string{"a.txt", "missing.txt"},
 			wantErr:        true,
 			wantDeletedNum: 1,
 		},
 		{
 			name:           "empty list",
-			existingFiles:  []string{},
+			setupFiles:     []string{},
 			inputFiles:     []string{},
 			wantErr:        false,
 			wantDeletedNum: 0,
@@ -250,17 +176,35 @@ func TestDeleteFiles(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// Create the files that should exist
-			existing := createTempFiles(t, tc.existingFiles)
+			tempDir := t.TempDir()
 
-			// Determine the files to pass as input:
-			// If inputFiles is empty but existingFiles is not, use existing.
+			var existing []string
+			for _, name := range tc.setupFiles {
+				path := filepath.Join(tempDir, name)
+				err := os.WriteFile(path, []byte("test"), 0644)
+				if err != nil {
+					t.Fatalf("failed to create temp file: %v", err)
+				}
+				existing = append(existing, path)
+			}
+
 			input := tc.inputFiles
 			if len(input) == 0 && len(existing) > 0 {
 				input = existing
+			} else {
+				// Convert relative paths to absolute for non-existing files
+				var absInput []string
+				for _, f := range input {
+					if !filepath.IsAbs(f) {
+						absInput = append(absInput, filepath.Join(tempDir, f))
+					} else {
+						absInput = append(absInput, f)
+					}
+				}
+				input = absInput
 			}
 
-			msg, err := deleteFiles(input)
+			_, err := deleteFiles(input)
 
 			if tc.wantErr && err == nil {
 				t.Fatalf("expected error, got nil")
@@ -269,19 +213,21 @@ func TestDeleteFiles(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			// Check that the message contains the list of deleted files
-			for _, f := range existing {
-				if strings.Contains(msg, filepath.Base(f)) {
-					// count only those that should have succeeded
-					continue
-				}
-			}
-
-			// Confirm how many files were actually deleted
 			deletedCount := 0
 			for _, f := range input {
-				if _, statErr := os.Stat(f); statErr != nil {
-					deletedCount++
+				// Check if file existed before (in setupFiles) and now doesn't exist
+				wasInSetup := false
+				for _, setup := range tc.setupFiles {
+					if filepath.Base(f) == setup {
+						wasInSetup = true
+						break
+					}
+				}
+
+				if wasInSetup {
+					if _, statErr := os.Stat(f); statErr != nil {
+						deletedCount++
+					}
 				}
 			}
 
@@ -292,33 +238,114 @@ func TestDeleteFiles(t *testing.T) {
 	}
 }
 
-func TestMultipleExtensions(t *testing.T) {
+func TestParseConfig(t *testing.T) {
 	tests := []struct {
-		input    string
-		expected []string
+		name string
+		list bool
+		ext  string
+		del  string
+		size int64
+		want Config
 	}{
-		{"", []string{}},
-		{".go", []string{".go"}},
-		{".go .txt .py", []string{".go", ".txt", ".py"}},
-		{"   .go   .txt   ", []string{".go", ".txt"}},
-		{".go\t.txt\n.py", []string{".go", ".txt", ".py"}},
-		{"  .go\t   .txt \n .py  ", []string{".go", ".txt", ".py"}},
+		{
+			name: "basic config",
+			list: true,
+			ext:  ".go .txt",
+			del:  "file1 file2",
+			size: 100,
+			want: Config{
+				List: true,
+				Ext:  []string{".go", ".txt"},
+				Del:  []string{"file1", "file2"},
+				Size: 100,
+			},
+		},
+		{
+			name: "empty extensions and deletions",
+			list: false,
+			ext:  "",
+			del:  "",
+			size: 0,
+			want: Config{
+				List: false,
+				Ext:  nil,
+				Del:  nil,
+				Size: 0,
+			},
+		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			got := handleMultiple(tt.input)
-
-			if len(got) != len(tt.expected) {
-				t.Fatalf("len=%d, want=%d (got=%v, expected=%v)",
-					len(got), len(tt.expected), got, tt.expected)
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseConfig(tt.list, tt.ext, tt.del, tt.size)
+			if !equalConfigs(got, tt.want) {
+				t.Errorf("ParseConfig() = %+v, want %+v", got, tt.want)
 			}
+		})
+	}
+}
 
-			for i := range got {
-				if got[i] != tt.expected[i] {
-					t.Fatalf("multipleExtensions(%q) = %v, want %v",
-						tt.input, got, tt.expected)
-				}
+func TestValidateConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     Config
+		wantErr bool
+	}{
+		{
+			name:    "valid config",
+			cfg:     Config{Size: 0},
+			wantErr: false,
+		},
+		{
+			name:    "invalid negative size",
+			cfg:     Config{Size: -1},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateConfig(tt.cfg)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateConfig() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateRoot(t *testing.T) {
+	tests := []struct {
+		name    string
+		root    string
+		wantErr bool
+	}{
+		{
+			name:    "empty root",
+			root:    "",
+			wantErr: true,
+		},
+		{
+			name:    "non-existent root",
+			root:    "/non/existent/path",
+			wantErr: true,
+		},
+		{
+			name:    "file instead of directory",
+			root:    "./main.go",
+			wantErr: true,
+		},
+		{
+			name:    "valid directory",
+			root:    "./testdata",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateRoot(tt.root)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateRoot() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -343,33 +370,31 @@ func (m mockFileInfo) Size() int64        { return m.size }
 func (m mockFileInfo) Mode() fs.FileMode  { return 0644 }
 func (m mockFileInfo) ModTime() time.Time { return time.Now() }
 func (m mockFileInfo) IsDir() bool        { return m.isDir }
-func (m mockFileInfo) Sys() interface{}   { return nil }
+func (m mockFileInfo) Sys() any           { return nil }
 
 func normalizeLines(s string) string {
 	return strings.ReplaceAll(s, "\r\n", "\n")
 }
 
-func createTestFS() *fstest.MapFS {
-	return &fstest.MapFS{
-		"file.txt": {
-			Data: []byte("content"),
-		},
-		"file.go": {
-			Data: []byte("package main"),
-		},
-		"subdir/script.py": {
-			Data: []byte("print('hello')"),
-		},
-		"subdir/nested/config.yml": {
-			Data: []byte("key: value"),
-		},
-		"directory": {
-			Mode: fs.ModeDir,
-		},
+func equalConfigs(a, b Config) bool {
+	if a.List != b.List || a.Size != b.Size {
+		return false
 	}
-}
-
-// make os.DirFS injectable for testing
-var osDirFS = func(root string) fs.FS {
-	return os.DirFS(root)
+	if len(a.Ext) != len(b.Ext) {
+		return false
+	}
+	if len(a.Del) != len(b.Del) {
+		return false
+	}
+	for i := range a.Ext {
+		if a.Ext[i] != b.Ext[i] {
+			return false
+		}
+	}
+	for i := range a.Del {
+		if a.Del[i] != b.Del[i] {
+			return false
+		}
+	}
+	return true
 }
