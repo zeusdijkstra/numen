@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -204,7 +206,7 @@ func TestFileProcessor_DeleteFiles(t *testing.T) {
 				input = absInput
 			}
 
-			_, err := deleteFiles(input)
+			_, err := deleteFiles(input, log.New(os.Stdout, "", 0))
 
 			if tc.wantErr && err == nil {
 				t.Fatalf("expected error, got nil")
@@ -217,11 +219,8 @@ func TestFileProcessor_DeleteFiles(t *testing.T) {
 			for _, f := range input {
 				// Check if file existed before (in setupFiles) and now doesn't exist
 				wasInSetup := false
-				for _, setup := range tc.setupFiles {
-					if filepath.Base(f) == setup {
-						wasInSetup = true
-						break
-					}
+				if slices.Contains(tc.setupFiles, filepath.Base(f)) {
+					wasInSetup = true
 				}
 
 				if wasInSetup {
@@ -254,10 +253,11 @@ func TestParseConfig(t *testing.T) {
 			del:  "file1 file2",
 			size: 100,
 			want: Config{
-				List: true,
-				Ext:  []string{".go", ".txt"},
-				Del:  []string{"file1", "file2"},
-				Size: 100,
+				List:    true,
+				Ext:     []string{".go", ".txt"},
+				Del:     []string{"file1", "file2"},
+				Size:    100,
+				LogFile: "",
 			},
 		},
 		{
@@ -267,17 +267,22 @@ func TestParseConfig(t *testing.T) {
 			del:  "",
 			size: 0,
 			want: Config{
-				List: false,
-				Ext:  nil,
-				Del:  nil,
-				Size: 0,
+				List:    false,
+				Ext:     nil,
+				Del:     nil,
+				Size:    0,
+				LogFile: "",
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ParseConfig(tt.list, tt.ext, tt.del, tt.size)
+			got, err := ParseConfig(tt.list, tt.ext, tt.del, tt.size, "")
+			if err != nil {
+				t.Errorf("ParseConfig() unexpected error: %v", err)
+				return
+			}
 			if !equalConfigs(got, tt.want) {
 				t.Errorf("ParseConfig() = %+v, want %+v", got, tt.want)
 			}
@@ -308,6 +313,53 @@ func TestValidateConfig(t *testing.T) {
 			err := ValidateConfig(tt.cfg)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidateConfig() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestParseConfig_WithLogFile(t *testing.T) {
+	tests := []struct {
+		name      string
+		logFile   string
+		wantErr   bool
+		wantField string
+	}{
+		{
+			name:      "no log file",
+			logFile:   "",
+			wantErr:   false,
+			wantField: "",
+		},
+		{
+			name:      "valid log file path",
+			logFile:   "/tmp/test.log",
+			wantErr:   false,
+			wantField: "/tmp/test.log",
+		},
+		{
+			name:      "invalid log file path",
+			logFile:   "/invalid/path/test.log",
+			wantErr:   true,
+			wantField: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := ParseConfig(false, "", "", 0, tt.logFile)
+
+			if tt.wantErr && err == nil {
+				t.Errorf("ParseConfig() expected error, got nil")
+				return
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("ParseConfig() unexpected error: %v", err)
+				return
+			}
+
+			if !tt.wantErr && cfg.LogFile != tt.wantField {
+				t.Errorf("ParseConfig() LogFile = %v, want %v", cfg.LogFile, tt.wantField)
 			}
 		})
 	}
@@ -377,7 +429,7 @@ func normalizeLines(s string) string {
 }
 
 func equalConfigs(a, b Config) bool {
-	if a.List != b.List || a.Size != b.Size {
+	if a.List != b.List || a.Size != b.Size || a.LogFile != b.LogFile {
 		return false
 	}
 	if len(a.Ext) != len(b.Ext) {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -22,8 +23,9 @@ func NewFileProcessor(root string, cfg Config) *FileProcessor {
 }
 
 func (fp *FileProcessor) ProcessFiles(out io.Writer) error {
+	delLogger := log.New(fp.cfg.wLog, "DELETED FILE: ", log.LstdFlags)
 	if len(fp.cfg.Del) > 0 {
-		return fp.deleteFiles(out)
+		return fp.deleteFiles(out, delLogger)
 	}
 
 	return fp.listFiles(out)
@@ -50,7 +52,7 @@ func (fp *FileProcessor) listFiles(out io.Writer) error {
 	})
 }
 
-func (fp *FileProcessor) deleteFiles(out io.Writer) error {
+func (fp *FileProcessor) deleteFiles(out io.Writer, delLogger *log.Logger) error {
 	if len(fp.cfg.Del) == 0 {
 		return ErrNoFilesToDelete
 	}
@@ -61,7 +63,7 @@ func (fp *FileProcessor) deleteFiles(out io.Writer) error {
 		filesToDelete = append(filesToDelete, full)
 	}
 
-	msg, err := deleteFiles(filesToDelete)
+	msg, err := deleteFiles(filesToDelete, delLogger)
 	if err != nil {
 		return err
 	}
@@ -92,7 +94,7 @@ func listFile(path string, out io.Writer) error {
 	return err
 }
 
-func deleteFiles(files []string) (string, error) {
+func deleteFiles(files []string, delLogger *log.Logger) (string, error) {
 	var deleted []string
 	var errs []error
 
@@ -105,6 +107,7 @@ func deleteFiles(files []string) (string, error) {
 	}
 
 	msg := fmt.Sprintf("successfully deleted: %v", deleted)
+	delLogger.Println(deleted)
 
 	if len(errs) > 0 {
 		return msg, fmt.Errorf("some files failed: %v", errs)
