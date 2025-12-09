@@ -46,4 +46,9 @@ var (
 		Code:    "NO_FILES_TO_DELETE",
 		Message: "no files specified for deletion",
 	}
+
+	ErrNoArchiveDir = &AppError{
+		Code:    "NO_ARCHIVE_DIR",
+		Message: "no archive dir specified",
+	}
 )

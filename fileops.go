@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"fmt"
 	"io"
 	"io/fs"
@@ -24,8 +25,13 @@ func NewFileProcessor(root string, cfg Config) *FileProcessor {
 
 func (fp *FileProcessor) ProcessFiles(out io.Writer) error {
 	delLogger := log.New(fp.cfg.wLog, "DELETED FILE: ", log.LstdFlags)
+
 	if len(fp.cfg.Del) > 0 {
 		return fp.deleteFiles(out, delLogger)
+	}
+
+	if fp.cfg.archive != "" {
+		return fp.archiveFiles(out)
 	}
 
 	return fp.listFiles(out)
@@ -72,6 +78,42 @@ func (fp *FileProcessor) deleteFiles(out io.Writer, delLogger *log.Logger) error
 	return nil
 }
 
+func (fp *FileProcessor) archiveFiles(out io.Writer) error {
+	if fp.cfg.archive == "" {
+		return ErrNoArchiveDir
+	}
+
+	fileSystem := os.DirFS(fp.root)
+
+	var archived []string
+
+	err := fs.WalkDir(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		if fp.shouldKeep(path, info) {
+			if err := fp.archiveFile(filepath.Join(fp.root, path)); err != nil {
+				return fmt.Errorf("failed to archive %s: %w", path, err)
+			}
+			archived = append(archived, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(out, "Successfully archived %d files to %s\n", len(archived), filepath.Base(fp.cfg.archive))
+
+	return nil
+}
+
 func (fp *FileProcessor) shouldKeep(path string, info fs.FileInfo) bool {
 	if info.IsDir() {
 		return false
@@ -87,6 +129,58 @@ func (fp *FileProcessor) shouldKeep(path string, info fs.FileInfo) bool {
 
 	fileExt := filepath.Ext(path)
 	return slices.Contains(fp.cfg.Ext, fileExt)
+}
+
+func (fp *FileProcessor) archiveFile(path string) error {
+	info, err := os.Stat(fp.cfg.archive)
+	if err != nil {
+		return err
+	}
+
+	if !info.IsDir() {
+		return fmt.Errorf("%s is not a directory", fp.cfg.archive)
+	}
+
+	relDir, err := filepath.Rel(fp.root, filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	dest := fmt.Sprintf("%s.gz", filepath.Base(path))
+	targetpath := filepath.Join(fp.cfg.archive, relDir, dest)
+
+	if err := os.MkdirAll(filepath.Dir(targetpath), 0755); err != nil {
+		return err
+	}
+
+	// destination file
+	out, err := os.OpenFile(targetpath, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	// file to be archived
+	in, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	// create compressor
+	zw := gzip.NewWriter(out)
+	zw.Name = filepath.Base(path)
+
+	// copy data
+	if _, err := io.Copy(zw, in); err != nil {
+		return err
+	}
+
+	// close the compressor
+	if err := zw.Close(); err != nil {
+		return err
+	}
+
+	return out.Close()
 }
 
 func listFile(path string, out io.Writer) error {

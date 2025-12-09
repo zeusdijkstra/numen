@@ -14,9 +14,10 @@ type Config struct {
 	Del     []string
 	LogFile string
 	wLog    io.Writer
+	archive string
 }
 
-func ParseConfig(list bool, ext, del string, size int64, logFile string) (Config, error) {
+func ParseConfig(list bool, ext, del, archive, logFile string, size int64) (Config, error) {
 	var writer io.Writer = os.Stdout
 
 	if logFile != "" {
@@ -35,6 +36,7 @@ func ParseConfig(list bool, ext, del string, size int64, logFile string) (Config
 		Size:    size,
 		Del:     parseExtensions(del),
 		LogFile: logFile,
+		archive: archive,
 	}, nil
 }
 

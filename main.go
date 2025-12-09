@@ -13,9 +13,10 @@ func main() {
 	size := flag.Int64("min", 0, "minimum file size")
 	del := flag.String("del", "", "files to delete")
 	logFile := flag.String("log", "", "log file path (default: stdout)")
+	archive := flag.String("archive", "", "Archive directory")
 	flag.Parse()
 
-	cfg, err := ParseConfig(*list, *ext, *del, *size, *logFile)
+	cfg, err := ParseConfig(*list, *ext, *del, *archive, *logFile, *size)
 	if err != nil {
 		fmt.Printf("Configuration error: %v\n", err)
 		os.Exit(1)
