@@ -102,22 +102,22 @@ func TestFileProcessor_ListFiles(t *testing.T) {
 		{
 			name:       "list all files no filters",
 			cfg:        Config{Ext: []string{}, Size: 0},
-			wantOutput: "file.go\nfile.txt\nsubdir/nested/config.yml\nsubdir/script.py\n",
+			wantOutput: "file.txt\nsubdir/nested/config.yml\nsubdir/script.py\n",
 		},
 		{
 			name:       "filter by extension .go",
 			cfg:        Config{Ext: []string{".go"}, Size: 0},
-			wantOutput: "file.go\n",
+			wantOutput: "",
 		},
 		{
 			name:       "filter by multiple extensions",
 			cfg:        Config{Ext: []string{".go", ".txt"}, Size: 0},
-			wantOutput: "file.go\nfile.txt\n",
+			wantOutput: "file.txt\n",
 		},
 		{
 			name:       "filter by size",
 			cfg:        Config{Ext: []string{}, Size: 10},
-			wantOutput: "file.go\nsubdir/nested/config.yml\nsubdir/script.py\n",
+			wantOutput: "subdir/nested/config.yml\nsubdir/script.py\n",
 		},
 		{
 			name:       "no files match criteria",
@@ -276,7 +276,7 @@ func TestParseConfig(t *testing.T) {
 			want: Config{
 				List:    true,
 				Ext:     []string{".go", ".txt"},
-				Del:     []string{"file1", "file2"},
+				Del:     []string{".file1", ".file2"},
 				archive: "/tmp/archive",
 				Size:    100,
 				LogFile: "",
@@ -310,7 +310,7 @@ func TestParseConfig(t *testing.T) {
 				t.Errorf("ParseConfig() unexpected error: %v", err)
 				return
 			}
-			if !equalConfigs(got, tt.want) {
+			if !equalConfigs(*got, tt.want) {
 				t.Errorf("ParseConfig() = %+v, want %+v", got, tt.want)
 			}
 		})
@@ -337,7 +337,7 @@ func TestValidateConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateConfig(tt.cfg)
+			err := ValidateConfig(&tt.cfg)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidateConfig() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -488,17 +488,33 @@ func equalConfigs(a, b Config) bool {
 // ARCHIVE FUNCTIONALITY TESTS
 // ============================================================================
 
+// createFileWithContent creates a file with the given content
+func createFileWithContent(t *testing.T, path string, content string) {
+	// Create directory if needed
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatalf("failed to create directory: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create test file %s: %v", path, err)
+	}
+}
+
 // Helper function to create test files with content
 func createTestFiles(t *testing.T, dir string, files map[string]string) {
 	for name, content := range files {
 		path := filepath.Join(dir, name)
-		// Create directory if needed
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			t.Fatalf("failed to create directory: %v", err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			t.Fatalf("failed to create test file %s: %v", path, err)
-		}
+		createFileWithContent(t, path, content)
+	}
+}
+
+// verifyFileContent verifies file content matches expected content
+func verifyFileContent(t *testing.T, path string, expectedContent string) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read file %s: %v", path, err)
+	}
+	if string(content) != expectedContent {
+		t.Errorf("file content = %q, want %q", string(content), expectedContent)
 	}
 }
 

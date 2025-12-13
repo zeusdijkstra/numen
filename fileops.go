@@ -37,7 +37,8 @@ func (fp *FileProcessor) ProcessFiles(out io.Writer) error {
 	return fp.listFiles(out)
 }
 
-func (fp *FileProcessor) listFiles(out io.Writer) error {
+// walkFiles walks through files in the root directory and applies the given action to files that should be kept
+func (fp *FileProcessor) walkFiles(action func(string, fs.FileInfo) error) error {
 	fileSystem := os.DirFS(fp.root)
 
 	return fs.WalkDir(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
@@ -51,10 +52,16 @@ func (fp *FileProcessor) listFiles(out io.Writer) error {
 		}
 
 		if fp.shouldKeep(path, info) {
-			return listFile(path, out)
+			return action(path, info)
 		}
 
 		return nil
+	})
+}
+
+func (fp *FileProcessor) listFiles(out io.Writer) error {
+	return fp.walkFiles(func(path string, info fs.FileInfo) error {
+		return listFile(path, out)
 	})
 }
 
@@ -83,26 +90,13 @@ func (fp *FileProcessor) archiveFiles(out io.Writer) error {
 		return ErrNoArchiveDir
 	}
 
-	fileSystem := os.DirFS(fp.root)
-
 	var archived []string
 
-	err := fs.WalkDir(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	err := fp.walkFiles(func(path string, info fs.FileInfo) error {
+		if err := fp.archiveFile(filepath.Join(fp.root, path)); err != nil {
+			return fmt.Errorf("failed to archive %s: %w", path, err)
 		}
-
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-
-		if fp.shouldKeep(path, info) {
-			if err := fp.archiveFile(filepath.Join(fp.root, path)); err != nil {
-				return fmt.Errorf("failed to archive %s: %w", path, err)
-			}
-			archived = append(archived, path)
-		}
+		archived = append(archived, path)
 		return nil
 	})
 	if err != nil {
@@ -131,6 +125,11 @@ func (fp *FileProcessor) shouldKeep(path string, info fs.FileInfo) bool {
 	return slices.Contains(fp.cfg.Ext, fileExt)
 }
 
+// openFileWithFlags opens a file with specified flags and permissions
+func openFileWithFlags(path string, flags int, perm os.FileMode) (*os.File, error) {
+	return os.OpenFile(path, flags, perm)
+}
+
 func (fp *FileProcessor) archiveFile(path string) error {
 	info, err := os.Stat(fp.cfg.archive)
 	if err != nil {
@@ -153,14 +152,14 @@ func (fp *FileProcessor) archiveFile(path string) error {
 	}
 
 	// destination file
-	out, err := os.OpenFile(targetpath, os.O_RDWR|os.O_CREATE, 0644)
+	out, err := openFileWithFlags(targetpath, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return err
 	}
 	defer out.Close()
 
 	// file to be archived
-	in, err := os.Open(path)
+	in, err := openFileWithFlags(path, os.O_RDONLY, 0)
 	if err != nil {
 		return err
 	}

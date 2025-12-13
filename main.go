@@ -22,17 +22,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := ValidateConfig(cfg); err != nil {
-		fmt.Printf("Configuration error: %v\n", err)
-		os.Exit(1)
-	}
-
 	if err := ValidateRoot(*root); err != nil {
 		fmt.Printf("Root directory error: %v\n", err)
 		os.Exit(1)
 	}
 
-	if err := run(*root, os.Stdout, cfg); err != nil {
+	if err := run(*root, os.Stdout, *cfg); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
